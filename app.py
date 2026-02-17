@@ -3,7 +3,7 @@ import pandas as pd
 import folium
 from streamlit_folium import st_folium
 
-st.set_page_config(page_title="Agri-Weather India", layout="portrait")
+st.set_page_config(page_title="Agri-Weather India", layout="centered")
 
 st.title("🌾 Agri-Weather Command Center")
 
