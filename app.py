@@ -4,72 +4,95 @@ import requests
 import folium
 from streamlit_folium import st_folium
 import altair as alt
+from datetime import datetime
+import pytz
 
-# 1. Page Configuration (Using valid layout)
-st.set_page_config(page_title="Agri-Trend Command", layout="wide")
+# 1. Page Config
+st.set_page_config(page_title="Agri-Intelligence Hub", layout="wide", initial_sidebar_state="collapsed")
 
-# Force Verdana Styling
-st.markdown("<style> * { font-family: 'Verdana' !important; } .main { background-color: #0a0e1a; } </style>", unsafe_allow_html=True)
+# GLOBAL CSS: Verdana & Dark Theme
+st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Verdana&display=swap');
+    html, body, [class*="css"] { font-family: 'Verdana', sans-serif !important; }
+    .main { background-color: #0a0e1a; }
+    h1 { font-size: 26px !important; color: #f8fafc; font-weight: 600; }
+    </style>
+    """, unsafe_allow_html=True)
 
-# 2. Stable Data Fetcher (7d Past + 7d Future)
+# 2. Intelligence Engine (10d Past + 7d Forecast)
 @st.cache_data(ttl=3600)
-def get_trend_data(lat, lon):
+def fetch_intelligence(lat, lon):
     try:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max&past_days=7&forecast_days=7&timezone=auto"
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min&past_days=10&forecast_days=7&current_weather=true&timezone=auto"
         res = requests.get(url).json()
         df = pd.DataFrame({
-            'Day': range(14),
-            'Temp': res['daily']['temperature_2m_max'],
-            'Type': ['Historical']*7 + ['Forecast']*7
+            'Date': pd.to_datetime(res['daily']['time']),
+            'Max': res['daily']['temperature_2m_max'],
+            'Min': res['daily']['temperature_2m_min'],
+            'Type': ['Historical']*10 + ['Forecast']*7
         })
-        return df
-    except Exception:
-        return None
+        return df, res['current_weather']['temperature']
+    except:
+        return None, None
 
-# 3. Default Hubs
-hubs = [
-    {"name": "Amritsar", "lat": 31.63, "lon": 74.87},
-    {"name": "Bikaner", "lat": 28.02, "lon": 73.31},
-    {"name": "Nagpur", "lat": 21.15, "lon": 79.09},
-    {"name": "Indore", "lat": 22.72, "lon": 75.86}
-]
+# 3. Session State Hubs
+if 'city_list' not in st.session_state:
+    st.session_state.city_list = [
+        {"name": "Amritsar", "lat": 31.63, "lon": 74.87}, {"name": "Bikaner", "lat": 28.02, "lon": 73.31},
+        {"name": "Delhi", "lat": 28.61, "lon": 77.21}, {"name": "Nagpur", "lat": 21.15, "lon": 79.09},
+        {"name": "Patna", "lat": 25.59, "lon": 85.14}, {"name": "Hyderabad", "lat": 17.39, "lon": 78.49}
+    ]
 
-st.title("🌾 Wheat Hub Intelligence")
+# 4. Header & Filter
+st.title("🌾 Agri-Intelligence Command Center")
 
-# 4. Map Initialization (Using a built-in dark theme for stability)
-m = folium.Map(
-    location=[22.5, 78], 
-    zoom_start=5, 
-    tiles='CartoDB dark_matter', # Native professional dark look
-    zoom_control=False
+view_mode = st.radio(
+    "Select Map View Data:",
+    ["Current/Max Temp", "17-Day Max Average", "17-Day Min Average"],
+    horizontal=True
 )
 
-for hub in hubs:
-    df_trend = get_trend_data(hub['lat'], hub['lon'])
+# 5. Map Generation (Folium for Chart Support)
+m = folium.Map(location=[22.5, 78], zoom_start=5, tiles='CartoDB dark_matter', zoom_control=False)
+
+# CSS for Midnight Blue feel in Folium
+m.get_root().header.add_child(folium.Element("""
+    <style>.leaflet-container { background: #0a0e1a !important; }</style>
+"""))
+
+summary_data = []
+
+for hub in st.session_state.city_list:
+    df_trend, cur_temp = fetch_intelligence(hub['lat'], hub['lon'])
     
     if df_trend is not None:
-        # Create Minimalist Altair Trendline
-        chart = alt.Chart(df_trend).mark_line(strokeWidth=3).encode(
-            x=alt.X('Day:O', axis=None), 
-            y=alt.Y('Temp:Q', axis=None, scale=alt.Scale(zero=False)),
+        # Filter logic for chart
+        y_col = 'Min' if "Min" in view_mode else 'Max'
+        
+        # Create Altair Trend Graph
+        chart = alt.Chart(df_trend).mark_line(point=True).encode(
+            x=alt.X('Date:T', axis=alt.Axis(title=None, format='%d %b')),
+            y=alt.Y(f'{y_col}:Q', title=f'{y_col} Temp (°C)', scale=alt.Scale(zero=False)),
             strokeDash=alt.condition(alt.datum.Type == 'Forecast', alt.value([5, 5]), alt.value([0, 0])),
-            color=alt.value('#3b82f6') # Professional Blue
-        ).properties(width=200, height=80, title=f"{hub['name']} 14d Trend")
+            color=alt.condition(alt.datum.Type == 'Forecast', alt.value('#FF4B4B'), alt.value('#3b82f6'))
+        ).properties(width=280, height=180, title=f"{hub['name']} {y_col} Trend").configure_title(font='Verdana')
 
-        # Convert to Popup
+        # Add to Popup
         vega_chart = folium.VegaLite(chart, width='100%', height='100%')
-        popup = folium.Popup(max_width=220)
+        popup = folium.Popup(max_width=320)
         vega_chart.add_to(popup)
         
-        # Add Hub Dot
         folium.CircleMarker(
             location=[hub['lat'], hub['lon']],
             radius=10, color='#FF4B4B', fill=True, fill_color='#FF4B4B',
-            popup=popup, tooltip=f"<b>{hub['name']}</b>"
+            popup=popup, tooltip=f"<b>{hub['name']}</b> (Click for Trends)"
         ).add_to(m)
+        
+        summary_data.append({"City": hub['name'], "Cur": cur_temp, "Max Avg": df_trend['Max'].mean(), "Min Avg": df_trend['Min'].mean()})
 
-# 5. Safe Render
-try:
-    st_folium(m, width=1400, height=720)
-except Exception as e:
-    st.error(f"Render Error: {e}. Check if streamlit-folium is in requirements.txt")
+# 6. Render
+st_folium(m, width=1400, height=700)
+
+if summary_data:
+    st.dataframe(pd.DataFrame(summary_data), use_container_width=True, hide_index=True)
