@@ -5,19 +5,28 @@ import requests
 from datetime import datetime
 import pytz
 
-# 1. Page Config & Custom Midnight Theme
-st.set_page_config(page_title="Agri-Intelligence Command", layout="wide", initial_sidebar_state="collapsed")
+# 1. Page Config & Professional Theme
+st.set_page_config(page_title="Agri-Intelligence Hub", layout="wide", initial_sidebar_state="collapsed")
 
-# Injecting the Midnight Blue background tone
+# GLOBAL CSS: Forcing Verdana and specific font sizes for a unified look
 st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Verdana&display=swap');
+    
+    html, body, [class*="css"], .stMarkdown, .stButton, .stTextInput, .stMultiSelect {
+        font-family: 'Verdana', sans-serif !important;
+    }
     .main { background-color: #0a0e1a; }
-    div.block-container { padding-top: 1rem; }
-    [data-testid="stSidebar"] { background-color: #111827; }
+    h1 { font-size: 28px !important; color: #f8fafc; font-weight: 600; }
+    .stMetric { font-size: 14px !important; }
+    div.block-container { padding-top: 1.5rem; }
+    
+    /* Summary Table Styling */
+    [data-testid="stDataFrame"] { font-family: 'Verdana' !important; font-size: 13px !important; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. Session State with all 18 Wheat-Growing Hubs
+# 2. Session State with 18 Wheat Hubs
 if 'city_list' not in st.session_state:
     st.session_state.city_list = [
         {"name": "Amritsar", "lat": 31.63, "lon": 74.87}, {"name": "Ludhiana", "lat": 30.90, "lon": 75.85},
@@ -31,10 +40,10 @@ if 'city_list' not in st.session_state:
         {"name": "Hyderabad", "lat": 17.39, "lon": 78.49}, {"name": "Bangalore", "lat": 12.97, "lon": 77.59}
     ]
 
-# 3. Location Manager (Sidebar)
+# 3. Location Manager
 with st.sidebar:
-    st.title("📍 Location Manager")
-    with st.expander("➕ Add Location", expanded=False):
+    st.markdown("### 📍 Location Manager")
+    with st.expander("➕ Add Hub"):
         new_city = st.text_input("City Name")
         if st.button("Add Hub", use_container_width=True):
             url = f"https://geocoding-api.open-meteo.com/v1/search?name={new_city}&count=1&language=en&format=json"
@@ -43,9 +52,9 @@ with st.sidebar:
                 r = res["results"][0]
                 st.session_state.city_list.append({"name": new_city, "lat": r["latitude"], "lon": r["longitude"]})
                 st.rerun()
-    with st.expander("❌ Remove Locations", expanded=False):
-        to_del = st.multiselect("Select Hubs", [c['name'] for c in st.session_state.city_list])
-        if st.button("Delete Selected", use_container_width=True):
+    with st.expander("❌ Remove Hubs"):
+        to_del = st.multiselect("Select Cities", [c['name'] for c in st.session_state.city_list])
+        if st.button("Confirm Delete", use_container_width=True):
             st.session_state.city_list = [c for c in st.session_state.city_list if c['name'] not in to_del]
             st.rerun()
 
@@ -63,42 +72,42 @@ def fetch_weather(cities):
         except: continue
     return pd.DataFrame(data), ts
 
-# 5. Dashboard Execution
+# 5. Dashboard Layout
 df, last_sync = fetch_weather(st.session_state.city_list)
 
 st.title("🌾 Agri-Intelligence Command Center")
 c1, c2 = st.columns([3, 1])
-with c1: st.markdown(f"🕒 **Last Sync:** `{last_sync} IST`")
+with c1: st.markdown(f"<p style='font-family:Verdana; font-size:14px; color:#94a3b8;'>🕒 Last Sync: <b>{last_sync} IST</b></p>", unsafe_allow_html=True)
 with c2: 
     if st.button("🔄 Refresh Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
-# MAP VISUALIZATION - PROFESSIONAL CROP
+# MAP VISUALIZATION - MIDNIGHT BLUE CLEAN LOOK
 fig = go.Figure()
 
 # Background Glow for Markers
 fig.add_trace(go.Scattergeo(
     lat=df['Lat'], lon=df['Lon'], mode='markers',
-    marker=dict(size=22, color='#FF4B4B', opacity=0.15),
+    marker=dict(size=20, color='#FF4B4B', opacity=0.15),
     hoverinfo='skip'
 ))
 
-# Main Active Markers
+# Active Markers
 fig.add_trace(go.Scattergeo(
     lat=df['Lat'], lon=df['Lon'], text=df['City'],
     mode='markers+text', textposition="top center",
     marker=dict(size=12, color='#FF4B4B', line=dict(width=1.5, color='white')),
-    textfont=dict(family="Verdana", size=9, color="#94a3b8"),
+    textfont=dict(family="Verdana", size=10, color="#cbd5e1"), # Light slate for names
     hovertemplate="<b>%{text}</b><br>Cur: %{customdata[0]}°C<br>Max: %{customdata[1]}°C<extra></extra>",
     customdata=df[['Cur', 'Max']]
 ))
 
 fig.update_geos(
     visible=False, resolution=50,
-    showland=True, landcolor="#1e293b", # Dark Blue-Grey Land
-    showocean=True, oceancolor="#0a0e1a", # Matches background exactly
-    showcountries=True, countrycolor="#334155", # Professional subtle borders
+    showland=True, landcolor="#1e293b",
+    showocean=True, oceancolor="#0a0e1a",
+    showcountries=True, countrycolor="#334155",
     showsubunits=True, subunitcolor="#1e293b",
     lataxis_range=[6, 38], lonaxis_range=[68, 98],
     projection_type="mercator"
@@ -107,8 +116,12 @@ fig.update_geos(
 fig.update_layout(
     height=800, margin={"r":0,"t":0,"l":0,"b":0},
     paper_bgcolor="#0a0e1a", plot_bgcolor="#0a0e1a",
-    dragmode=False
+    dragmode=False,
+    # Hoverlabel font management
+    hoverlabel=dict(font_size=13, font_family="Verdana")
 )
 
 st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
+
+# Summary Table (Filtered to Essentials)
 st.dataframe(df[['City', 'Cur', 'Max', 'Min']], use_container_width=True, hide_index=True)
