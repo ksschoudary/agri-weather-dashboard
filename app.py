@@ -1,127 +1,66 @@
 import streamlit as st
-import plotly.graph_objects as go
 import pandas as pd
 import requests
-from datetime import datetime
-import pytz
+import folium
+from streamlit_folium import st_folium
+import altair as alt
 
-# 1. Page Config & Professional Theme
-st.set_page_config(page_title="Agri-Intelligence Hub", layout="wide", initial_sidebar_state="collapsed")
+# 1. Page Config
+st.set_page_config(page_title="Agri-Trend Command", layout="wide")
 
-# GLOBAL CSS: Forcing Verdana and specific font sizes for a unified look
-st.markdown("""
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Verdana&display=swap');
-    
-    html, body, [class*="css"], .stMarkdown, .stButton, .stTextInput, .stMultiSelect {
-        font-family: 'Verdana', sans-serif !important;
-    }
-    .main { background-color: #0a0e1a; }
-    h1 { font-size: 28px !important; color: #f8fafc; font-weight: 600; }
-    .stMetric { font-size: 14px !important; }
-    div.block-container { padding-top: 1.5rem; }
-    
-    /* Summary Table Styling */
-    [data-testid="stDataFrame"] { font-family: 'Verdana' !important; font-size: 13px !important; }
-    </style>
-    """, unsafe_allow_html=True)
+# Global Verdana Styling
+st.markdown("<style> * { font-family: 'Verdana' !important; } .main { background-color: #0a0e1a; } </style>", unsafe_allow_html=True)
 
-# 2. Session State with 18 Wheat Hubs
-if 'city_list' not in st.session_state:
-    st.session_state.city_list = [
-        {"name": "Amritsar", "lat": 31.63, "lon": 74.87}, {"name": "Ludhiana", "lat": 30.90, "lon": 75.85},
-        {"name": "Delhi", "lat": 28.61, "lon": 77.21}, {"name": "Mathura", "lat": 27.49, "lon": 77.67},
-        {"name": "Rudrapur", "lat": 28.98, "lon": 79.41}, {"name": "Shahjahanpur", "lat": 27.88, "lon": 79.91},
-        {"name": "Bikaner", "lat": 28.02, "lon": 73.31}, {"name": "Kota", "lat": 25.21, "lon": 75.86},
-        {"name": "Rajkot", "lat": 22.30, "lon": 70.80}, {"name": "Nadiad", "lat": 22.69, "lon": 72.86},
-        {"name": "Bhopal", "lat": 23.26, "lon": 77.41}, {"name": "Indore", "lat": 22.72, "lon": 75.86},
-        {"name": "Nagpur", "lat": 21.15, "lon": 79.09}, {"name": "Patna", "lat": 25.59, "lon": 85.14},
-        {"name": "Begusarai", "lat": 25.42, "lon": 86.13}, {"name": "Lalitpur", "lat": 24.69, "lon": 78.41},
-        {"name": "Hyderabad", "lat": 17.39, "lon": 78.49}, {"name": "Bangalore", "lat": 12.97, "lon": 77.59}
-    ]
-
-# 3. Location Manager
-with st.sidebar:
-    st.markdown("### 📍 Location Manager")
-    with st.expander("➕ Add Hub"):
-        new_city = st.text_input("City Name")
-        if st.button("Add Hub", use_container_width=True):
-            url = f"https://geocoding-api.open-meteo.com/v1/search?name={new_city}&count=1&language=en&format=json"
-            res = requests.get(url).json()
-            if "results" in res:
-                r = res["results"][0]
-                st.session_state.city_list.append({"name": new_city, "lat": r["latitude"], "lon": r["longitude"]})
-                st.rerun()
-    with st.expander("❌ Remove Hubs"):
-        to_del = st.multiselect("Select Cities", [c['name'] for c in st.session_state.city_list])
-        if st.button("Confirm Delete", use_container_width=True):
-            st.session_state.city_list = [c for c in st.session_state.city_list if c['name'] not in to_del]
-            st.rerun()
-
-# 4. Data Engine
+# 2. Simplified Data Engine (7d Past + 7d Future)
 @st.cache_data(ttl=3600)
-def fetch_weather(cities):
-    data = []
-    ist = pytz.timezone('Asia/Kolkata')
-    ts = datetime.now(ist).strftime("%d %b %Y | %I:%M %p")
-    for c in cities:
-        try:
-            url = f"https://api.open-meteo.com/v1/forecast?latitude={c['lat']}&longitude={c['lon']}&current_weather=true&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
-            res = requests.get(url).json()
-            data.append({"City": c['name'], "Lat": c['lat'], "Lon": c['lon'], "Cur": res["current_weather"]["temperature"], "Max": res["daily"]["temperature_2m_max"][0], "Min": res["daily"]["temperature_2m_min"][0]})
-        except: continue
-    return pd.DataFrame(data), ts
+def get_trend_data(lat, lon):
+    try:
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max&past_days=7&forecast_days=7&timezone=auto"
+        res = requests.get(url).json()
+        df = pd.DataFrame({
+            'Day': range(14),
+            'Temp': res['daily']['temperature_2m_max'],
+            'Type': ['Historical']*7 + ['Forecast']*7
+        })
+        return df
+    except:
+        return None
 
-# 5. Dashboard Layout
-df, last_sync = fetch_weather(st.session_state.city_list)
+# 3. India Map with Hover-Popups
+st.title("🌾 Wheat Hubs: 14-Day Max Temp Trends")
 
-st.title("🌾 Agri-Intelligence Command Center")
-c1, c2 = st.columns([3, 1])
-with c1: st.markdown(f"<p style='font-family:Verdana; font-size:14px; color:#94a3b8;'>🕒 Last Sync: <b>{last_sync} IST</b></p>", unsafe_allow_html=True)
-with c2: 
-    if st.button("🔄 Refresh Data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+# Native Dark Tiles for professional look
+m = folium.Map(location=[22.5, 78], zoom_start=5, tiles='CartoDB dark_matter', zoom_control=False)
 
-# MAP VISUALIZATION - MIDNIGHT BLUE CLEAN LOOK
-fig = go.Figure()
+hubs = st.session_state.get('city_list', [
+    {"name": "Amritsar", "lat": 31.63, "lon": 74.87},
+    {"name": "Bikaner", "lat": 28.02, "lon": 73.31},
+    {"name": "Nagpur", "lat": 21.15, "lon": 79.09}
+])
 
-# Background Glow for Markers
-fig.add_trace(go.Scattergeo(
-    lat=df['Lat'], lon=df['Lon'], mode='markers',
-    marker=dict(size=20, color='#FF4B4B', opacity=0.15),
-    hoverinfo='skip'
-))
+for hub in hubs:
+    df_trend = get_trend_data(hub['lat'], hub['lon'])
+    
+    if df_trend is not None:
+        # Create Minimalist Altair Sparkline
+        chart = alt.Chart(df_trend).mark_line().encode(
+            x=alt.X('Day:O', axis=None), # Hide X axis
+            y=alt.Y('Temp:Q', axis=None, scale=alt.Scale(zero=False)), # Hide Y axis
+            strokeDash=alt.condition(alt.datum.Type == 'Forecast', alt.value([5, 5]), alt.value([0, 0])),
+            color=alt.value('#3b82f6') # Professional Blue
+        ).properties(width=200, height=80, title=f"{hub['name']} Trend (14d)")
 
-# Active Markers
-fig.add_trace(go.Scattergeo(
-    lat=df['Lat'], lon=df['Lon'], text=df['City'],
-    mode='markers+text', textposition="top center",
-    marker=dict(size=12, color='#FF4B4B', line=dict(width=1.5, color='white')),
-    textfont=dict(family="Verdana", size=10, color="#cbd5e1"), # Light slate for names
-    hovertemplate="<b>%{text}</b><br>Cur: %{customdata[0]}°C<br>Max: %{customdata[1]}°C<extra></extra>",
-    customdata=df[['Cur', 'Max']]
-))
+        # Convert to Popup
+        vega_chart = folium.VegaLite(chart, width='100%', height='100%')
+        popup = folium.Popup(max_width=220)
+        vega_chart.add_to(popup)
+        
+        # Add Hub Dot
+        folium.CircleMarker(
+            location=[hub['lat'], hub['lon']],
+            radius=10, color='#FF4B4B', fill=True, fill_color='#FF4B4B',
+            popup=popup, tooltip=f"<b>{hub['name']}</b>"
+        ).add_to(m)
 
-fig.update_geos(
-    visible=False, resolution=50,
-    showland=True, landcolor="#1e293b",
-    showocean=True, oceancolor="#0a0e1a",
-    showcountries=True, countrycolor="#334155",
-    showsubunits=True, subunitcolor="#1e293b",
-    lataxis_range=[6, 38], lonaxis_range=[68, 98],
-    projection_type="mercator"
-)
-
-fig.update_layout(
-    height=800, margin={"r":0,"t":0,"l":0,"b":0},
-    paper_bgcolor="#0a0e1a", plot_bgcolor="#0a0e1a",
-    dragmode=False,
-    # Hoverlabel font management
-    hoverlabel=dict(font_size=13, font_family="Verdana")
-)
-
-st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-# Summary Table (Filtered to Essentials)
-st.dataframe(df[['City', 'Cur', 'Max', 'Min']], use_container_width=True, hide_index=True)
+# 4. Render
+st_folium(m, width=1400, height=720)
