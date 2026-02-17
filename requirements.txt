@@ -1,5 +1,5 @@
 streamlit
+plotly
+Pillow
 pandas
-folium
-streamlit-folium
 requests
