@@ -1,34 +1,42 @@
 import streamlit as st
-import pandas as pd
-import folium
-from streamlit_folium import st_folium
+import plotly.express as px
+from PIL import Image
 
-st.set_page_config(page_title="Agri-Weather India", layout="centered")
+st.set_page_config(page_title="Agri-Intelligence", layout="centered")
 
-st.title("🌾 Agri-Weather Command Center")
+# 1. Load your Static Map
+img = Image.open("india_map.png")
 
-# Your 18 Cities Data (Simplified for this example)
+# 2. Your 18 City Data
+# Note: You'll need to calibrate these X/Y values once to match your specific image
 cities = [
-    {"name": "Bikaner", "lat": 28.02, "lon": 73.31, "temp": 32},
-    {"name": "Nagpur", "lat": 21.14, "lon": 79.08, "temp": 34},
-    # ... add the rest here
+    {"name": "Bikaner", "x": 150, "y": 250, "temp": 32, "max": 35, "min": 18},
+    {"name": "Nagpur", "x": 350, "y": 480, "temp": 34, "max": 38, "min": 22},
+    # Add others here...
 ]
 
-# 1. The Map
-m = folium.Map(location=[22.0, 78.0], zoom_start=5, tiles="CartoDB positron")
+# 3. Create the Visualization
+fig = px.scatter(cities, x="x", y="y", text="name", 
+                 hover_data={"temp":True, "max":True, "min":True, "x":False, "y":False})
 
-# 2. Add the Dots
-for city in cities:
-    folium.CircleMarker(
-        location=[city["lat"], city["lon"]],
-        radius=8,
-        popup=f"{city['name']}: {city['temp']}°C",
-        color="red" if city["temp"] > 33 else "green",
-        fill=True
-    ).add_to(m)
+# Add the image as the background
+fig.add_layout_image(
+    dict(source=img, xref="x", yref="y", x=0, y=800, # y matches image height
+         sizex=600, sizey=800, sizing="stretch", opacity=1, layer="below")
+)
 
-# 3. Display in Streamlit
-st_folium(m, width=700, height=500)
+# Clean up the axes (hide gridlines)
+fig.update_xaxes(showgrid=False, zeroline=False, visible=False, range=[0, 600])
+fig.update_yaxes(showgrid=False, zeroline=False, visible=False, range=[0, 800])
 
-if st.button('🔄 Refresh Live IMD Data'):
-    st.experimental_rerun()
+# Styling the dots
+fig.update_traces(marker=dict(size=12, color='red', line=dict(width=2, color='white')),
+                  textposition='top center', textfont=dict(color='black', size=10))
+
+fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=700)
+
+st.title("🌾 Wheat Intelligence Hub")
+st.plotly_chart(fig, use_container_width=True)
+
+if st.button('🔄 Refresh Live Metrics'):
+    st.rerun()
