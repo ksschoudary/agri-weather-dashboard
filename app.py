@@ -3,17 +3,10 @@ import plotly.graph_objects as go
 import pandas as pd
 import requests
 from datetime import datetime
+import pytz # Standard library for handling timezones
 
-# 1. Page Config - Professional Dark Theme Setup
-st.set_page_config(page_title="Agri-Intel Command", layout="wide", initial_sidebar_state="collapsed")
-
-# Custom CSS for a truly dark dashboard
-st.markdown("""
-    <style>
-    .main { background-color: #0e1117; }
-    div.block-container { padding-top: 1rem; }
-    </style>
-    """, unsafe_allow_html=True)
+# 1. Page Config
+st.set_page_config(page_title="Wheat Intelligence Hub", layout="wide", initial_sidebar_state="collapsed")
 
 # 2. Session State for Locations
 if 'city_list' not in st.session_state:
@@ -25,83 +18,68 @@ if 'city_list' not in st.session_state:
         {"name": "Bangalore", "lat": 12.97, "lon": 77.59}, {"name": "Chennai", "lat": 13.08, "lon": 80.27}
     ]
 
-# 3. Location Manager Sidebar
-with st.sidebar:
-    st.header("📍 Location Manager")
-    with st.expander("➕ Add Location"):
-        new_city = st.text_input("City Name")
-        if st.button("Add"):
-            url = f"https://geocoding-api.open-meteo.com/v1/search?name={new_city}&count=1&language=en&format=json"
-            res = requests.get(url).json()
-            if "results" in res:
-                r = res["results"][0]
-                st.session_state.city_list.append({"name": new_city, "lat": r["latitude"], "lon": r["longitude"]})
-                st.rerun()
-    with st.expander("❌ Remove"):
-        names = [c['name'] for c in st.session_state.city_list]
-        to_del = st.multiselect("Select Cities", options=names)
-        if st.button("Delete"):
-            st.session_state.city_list = [c for c in st.session_state.city_list if c['name'] not in to_del]
-            st.rerun()
-
-# 4. Fetch Weather Data
+# 3. Weather Data Engine with Timestamp
 @st.cache_data(ttl=3600)
 def fetch_weather(cities):
     data = []
+    # Fetching Current Time in IST
+    ist = pytz.timezone('Asia/Kolkata')
+    current_time = datetime.now(ist).strftime("%d %b %Y | %I:%M %p")
+    
     for c in cities:
-        url = f"https://api.open-meteo.com/v1/forecast?latitude={c['lat']}&longitude={c['lon']}&current_weather=true&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
-        res = requests.get(url).json()
-        data.append({
-            "City": c['name'], "Lat": c['lat'], "Lon": c['lon'],
-            "Cur": res["current_weather"]["temperature"],
-            "Max": res["daily"]["temperature_2m_max"][0],
-            "Min": res["daily"]["temperature_2m_min"][0]
-        })
-    return pd.DataFrame(data), datetime.now().strftime("%Y-%m-%d %H:%M")
+        try:
+            url = f"https://api.open-meteo.com/v1/forecast?latitude={c['lat']}&longitude={c['lon']}&current_weather=true&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
+            res = requests.get(url).json()
+            data.append({
+                "City": c['name'], "Lat": c['lat'], "Lon": c['lon'],
+                "Cur": res["current_weather"]["temperature"],
+                "Max": res["daily"]["temperature_2m_max"][0],
+                "Min": res["daily"]["temperature_2m_min"][0]
+            })
+        except: continue
+    return pd.DataFrame(data), current_time
 
-# 5. Visual Dashboard
-df, last_updated = fetch_weather(st.session_state.city_list)
-
+# 4. Header Section: Refresh & Timestamp
 st.title("🌾 Agri-Intelligence Dashboard")
-st.info(f"🕒 Last Updated: {last_updated}")
 
-# Build the Glowing India Map
-fig = go.Figure()
+df, last_sync = fetch_weather(st.session_state.city_list)
 
-# Add the Map Trace
-fig.add_trace(go.Scattergeo(
+col_time, col_refresh = st.columns([3, 1])
+
+with col_time:
+    # Clean, professional timestamp
+    st.markdown(f"🕒 **Last Updated:** `{last_sync} IST`")
+
+with col_refresh:
+    # Small, high-speed refresh button
+    if st.button("🔄 Refresh Now", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+
+# 5. The Locked Dark Map
+fig = go.Figure(go.Scattergeo(
     lat = df['Lat'], lon = df['Lon'], text = df['City'],
     mode = 'markers+text',
     textposition = "top center",
-    # ATTRACTIVE DOTS: Glowing orange center with white ring
-    marker = dict(
-        size=14, color='#FF4B4B', 
-        line=dict(width=2, color='white'),
-        opacity=1
-    ),
+    marker = dict(size=14, color='#FF4B4B', line=dict(width=2, color='white'), opacity=1),
     textfont=dict(family="Verdana", size=10, color="white"),
     hovertemplate = "<b>%{text}</b><br>Cur: %{customdata[0]}°C<br>Max: %{customdata[1]}°C<br>Min: %{customdata[2]}°C<extra></extra>",
     customdata = df[['Cur', 'Max', 'Min']]
 ))
 
-# CUSTOM DARK THEME & CLEAN CROP
 fig.update_geos(
     visible=False, resolution=50,
-    showcountries=True, countrycolor="#444", # Subtle dark borders
-    showsubunits=True, subunitcolor="#222", # Very subtle state lines
-    showland=True, landcolor="#111", # Deep black land
-    showocean=True, oceancolor="#0e1117", # Background matching ocean
+    showcountries=True, countrycolor="#444",
+    showsubunits=True, subunitcolor="#222", 
+    showland=True, landcolor="#111",
     lataxis_range=[6, 38], lonaxis_range=[68, 98],
     projection_type="mercator"
 )
 
 fig.update_layout(
-    height=800, margin={"r":0,"t":0,"l":0,"b":0},
+    height=750, margin={"r":0,"t":10,"l":0,"b":0},
     paper_bgcolor="#0e1117", plot_bgcolor="#0e1117",
     dragmode=False
 )
 
-st.plotly_chart(fig, use_container_width=True, config={'displayModeBar': False})
-
-# Summary Table
-st.dataframe(df[['City', 'Cur', 'Max', 'Min']], use_container_width=True, hide_index=True)
+st
