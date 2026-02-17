@@ -1,5 +1,7 @@
 streamlit
-plotly
-Pillow
 pandas
 requests
+folium
+streamlit-folium
+altair
+pytz
