@@ -5,13 +5,13 @@ import folium
 from streamlit_folium import st_folium
 import altair as alt
 
-# 1. Page Config & Professional Theme
+# 1. Page Configuration (Using valid layout)
 st.set_page_config(page_title="Agri-Trend Command", layout="wide")
 
-# Global Verdana Styling (Simple & Stable)
-st.markdown("""<style> html, body, * { font-family: 'Verdana', sans-serif !important; } </style>""", unsafe_allow_html=True)
+# Force Verdana Styling
+st.markdown("<style> * { font-family: 'Verdana' !important; } .main { background-color: #0a0e1a; } </style>", unsafe_allow_html=True)
 
-# 2. Data Fetcher (7 Days Past + 7 Days Future)
+# 2. Stable Data Fetcher (7d Past + 7d Future)
 @st.cache_data(ttl=3600)
 def get_trend_data(lat, lon):
     try:
@@ -26,50 +26,50 @@ def get_trend_data(lat, lon):
     except Exception:
         return None
 
-# 3. Hub Locations
-if 'city_list' not in st.session_state:
-    st.session_state.city_list = [
-        {"name": "Amritsar", "lat": 31.63, "lon": 74.87}, {"name": "Ludhiana", "lat": 30.90, "lon": 75.85},
-        {"name": "Delhi", "lat": 28.61, "lon": 77.21}, {"name": "Bikaner", "lat": 28.02, "lon": 73.31},
-        {"name": "Nagpur", "lat": 21.15, "lon": 79.09}, {"name": "Indore", "lat": 22.72, "lon": 75.86}
-    ]
+# 3. Default Hubs
+hubs = [
+    {"name": "Amritsar", "lat": 31.63, "lon": 74.87},
+    {"name": "Bikaner", "lat": 28.02, "lon": 73.31},
+    {"name": "Nagpur", "lat": 21.15, "lon": 79.09},
+    {"name": "Indore", "lat": 22.72, "lon": 75.86}
+]
 
-st.title("🌾 Wheat Hubs: 14-Day Max Temp Trends")
+st.title("🌾 Wheat Hub Intelligence")
 
-# 4. Map Initialization (Native Dark Tiles)
+# 4. Map Initialization (Using a built-in dark theme for stability)
 m = folium.Map(
     location=[22.5, 78], 
     zoom_start=5, 
-    tiles='CartoDB dark_matter', # Professional dark look without CSS hacks
+    tiles='CartoDB dark_matter', # Native professional dark look
     zoom_control=False
 )
 
-for hub in st.session_state.city_list:
+for hub in hubs:
     df_trend = get_trend_data(hub['lat'], hub['lon'])
     
     if df_trend is not None:
-        # Create Minimalist Altair Trendline (Simple Blue Line)
+        # Create Minimalist Altair Trendline
         chart = alt.Chart(df_trend).mark_line(strokeWidth=3).encode(
             x=alt.X('Day:O', axis=None), 
             y=alt.Y('Temp:Q', axis=None, scale=alt.Scale(zero=False)),
             strokeDash=alt.condition(alt.datum.Type == 'Forecast', alt.value([5, 5]), alt.value([0, 0])),
             color=alt.value('#3b82f6') # Professional Blue
-        ).properties(width=220, height=100, title=f"{hub['name']} Trend (14d)")
+        ).properties(width=200, height=80, title=f"{hub['name']} 14d Trend")
 
         # Convert to Popup
         vega_chart = folium.VegaLite(chart, width='100%', height='100%')
-        popup = folium.Popup(max_width=250)
+        popup = folium.Popup(max_width=220)
         vega_chart.add_to(popup)
         
-        # Add Hub Marker
+        # Add Hub Dot
         folium.CircleMarker(
             location=[hub['lat'], hub['lon']],
             radius=10, color='#FF4B4B', fill=True, fill_color='#FF4B4B',
             popup=popup, tooltip=f"<b>{hub['name']}</b>"
         ).add_to(m)
 
-# 5. Render
+# 5. Safe Render
 try:
     st_folium(m, width=1400, height=720)
 except Exception as e:
-    st.error(f"Map rendering error: {e}")
+    st.error(f"Render Error: {e}. Check if streamlit-folium is in requirements.txt")
