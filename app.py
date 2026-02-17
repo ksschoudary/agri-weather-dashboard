@@ -4,11 +4,12 @@ import pandas as pd
 import requests
 from PIL import Image
 import os
+from io import BytesIO
 
-# 1. Setup Page - "centered" works best for mobile portrait stacking
-st.set_page_config(page_title="Wheat Intelligence Hub", layout="centered")
+# 1. Page Configuration
+st.set_page_config(page_title="Agri-Weather Command Center", layout="centered")
 
-# 2. Define your 18 Wheat Hubs
+# 2. 18 Cities Data (Verified coordinates)
 CITIES = [
     {"name": "Amritsar", "lat": 31.63, "lon": 74.87}, {"name": "Ludhiana", "lat": 30.90, "lon": 75.85},
     {"name": "Delhi", "lat": 28.61, "lon": 77.20}, {"name": "Mathura", "lat": 27.49, "lon": 77.67},
@@ -21,62 +22,70 @@ CITIES = [
     {"name": "Hyderabad", "lat": 17.38, "lon": 78.48}, {"name": "Bangalore", "lat": 12.97, "lon": 77.59}
 ]
 
-# 3. Fetch Live Data from Open-Meteo (Free)
-@st.cache_data(ttl=3600)  # Caches data for 1 hour to stay fast
-def get_live_weather(city_list):
+# 3. Sidebar Calibration (Use these to align the dots to your image)
+st.sidebar.header("🗺️ Map Alignment")
+x_nudge = st.sidebar.slider("Left/Right Nudge", 60.0, 75.0, 68.0, 0.1)
+y_nudge = st.sidebar.slider("Up/Down Nudge", 30.0, 45.0, 38.0, 0.1)
+map_size = st.sidebar.slider("Map Scale", 25.0, 40.0, 31.0, 0.1)
+
+# 4. Fetch Weather Data (Open-Meteo Free)
+@st.cache_data(ttl=3600)
+def get_weather():
     results = []
-    for city in city_list:
+    for city in CITIES:
         try:
             url = f"https://api.open-meteo.com/v1/forecast?latitude={city['lat']}&longitude={city['lon']}&current_weather=true&daily=temperature_2m_max,temperature_2m_min&timezone=auto"
-            data = requests.get(url).json()
+            d = requests.get(url).json()
             results.append({
-                "City": city['name'],
-                "Lat": city['lat'],
-                "Lon": city['lon'],
-                "Temp": data['current_weather']['temperature'],
-                "Max": data['daily']['temperature_2m_max'][0],
-                "Min": data['daily']['temperature_2m_min'][0]
+                "City": city['name'], "Lat": city['lat'], "Lon": city['lon'],
+                "Temp": d['current_weather']['temperature'],
+                "Max": d['daily']['temperature_2m_max'][0],
+                "Min": d['daily']['temperature_2m_min'][0]
             })
-        except:
-            continue
+        except: continue
     return pd.DataFrame(results)
 
-# 4. Load the Background Map
+# 5. Load Image
 try:
-    base_path = os.path.dirname(__file__)
-    img = Image.open(os.path.join(base_path, "india_map.png"))
-except FileNotFoundError:
-    st.error("Error: 'india_map.png' not found. Please upload it to your GitHub repo.")
+    img = Image.open("india_map.png")
+except:
+    st.error("Missing 'india_map.png' in GitHub root.")
     st.stop()
 
-# 5. Build Visualization
-st.title("🌾 Wheat Intelligence Command Center")
-df = get_live_weather(CITIES)
+# 6. Build Visualization
+st.title("🌾 Wheat Weather Hub")
+df = get_weather()
 
-# We use Latitude/Longitude as X/Y directly for the scatter overlay
-fig = px.scatter(df, x="Lon", y="Lat", text="City", 
-                 hover_data={"Temp": True, "Max": True, "Min": True, "Lat": False, "Lon": False},
-                 color="Temp", color_continuous_scale="RdYlGn_r") # Red for hot, Green for cool
+fig = px.scatter(df, x="Lon", y="Lat", text="City",
+                 color="Temp", color_continuous_scale="RdYlGn_r",
+                 hover_data={"Temp":True, "Max":True, "Min":True, "Lat":False, "Lon":False})
 
-# Overlay the image
-fig.add_layout_image(
-    dict(source=img, xref="x", yref="y", 
-         x=68, y=38, # Bottom-left anchor (approx India coords)
-         sizex=30, sizey=32, # Width/Height in degrees
-         sizing="stretch", opacity=1, layer="below")
+# Correct visibility: Mode 'markers+text' ensures names stay on screen
+fig.update_traces(
+    mode='markers+text',
+    textposition='top center',
+    marker=dict(size=14, line=dict(width=2, color='white'), opacity=0.9),
+    textfont=dict(family="Arial Black", size=10, color="black"),
+    hovertemplate="<b>%{text}</b><br>Now: %{customdata[0]}°C<br>Max: %{customdata[1]}°C<br>Min: %{customdata[2]}°C<extra></extra>",
+    customdata=df[['Temp', 'Max', 'Min']]
 )
 
-# Hide axes for a clean "Command Center" look
-fig.update_xaxes(showgrid=False, visible=False, range=[68, 98])
-fig.update_yaxes(showgrid=False, visible=False, range=[6, 38])
-fig.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=700)
+# Overlay Image using Sidebar Nudge Values
+fig.add_layout_image(
+    dict(source=img, xref="x", yref="y", x=x_nudge, y=y_nudge,
+         sizex=map_size, sizey=map_size, sizing="stretch", opacity=1, layer="below")
+)
+
+# Fixed viewing window for India
+fig.update_xaxes(showgrid=False, visible=False, range=[66, 99])
+fig.update_yaxes(showgrid=False, visible=False, range=[6, 40])
+fig.update_layout(margin=dict(l=0, r=0, t=10, b=0), height=750, showlegend=False)
 
 st.plotly_chart(fig, use_container_width=True)
 
-# 6. Summary Table below the Map
-st.subheader("📊 Region Summary")
+# 7. Summary Table (Mobile Friendly)
 st.dataframe(df[['City', 'Temp', 'Max', 'Min']], use_container_width=True, hide_index=True)
 
-if st.button('🔄 Refresh Data'):
+if st.button('🔄 Refresh'):
     st.cache_data.clear()
     st.rerun()
